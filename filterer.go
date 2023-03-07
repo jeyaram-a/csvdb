@@ -1,41 +1,37 @@
 package main
 
 import (
-	"fmt"
-
 	log "github.com/sirupsen/logrus"
 )
 
-type ColumnFilter struct {
-	col       int
-	evaluator func(string) bool
-}
+
+const AND = "AND"
+const OR = "OR"
+
 
 type Filterer struct {
-	filters []ColumnFilter
-	inChan  chan []string
+	predicates []Predicate
+	inChan     chan []string
 }
 
-func NewFilterer(filters []ColumnFilter) *Filterer {
+func NewFilterer(predicates []Predicate) *Filterer {
 	return &Filterer{
-		filters: filters,
-		inChan:  make(chan []string),
+		predicates: predicates,
+		inChan:     make(chan []string),
 	}
-
 }
 
 func (filterer *Filterer) filter(outChan chan []string) {
 	for row := range filterer.inChan {
 		log.Debug("Filterer ", row)
 		passed := true
-		for _, filter := range filterer.filters {
-			if !filter.evaluator(row[filter.col]) {
+		for _, predicate := range filterer.predicates {
+			if !predicate(row) {
 				passed = false
 				break
 			}
 		}
 		if passed {
-			fmt.Println("passed ", row)
 			outChan <- row
 		}
 	}

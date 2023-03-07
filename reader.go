@@ -90,68 +90,116 @@ func (csvReader CSVReader) getColumnIndex(col string) (int, error) {
 	return index, nil
 }
 
-func (csvReader CSVReader) getFiltersFromStatement(statment SelectStatment) []ColumnFilter {
-	columnFilterers := make([]ColumnFilter, 0)
-	for _, filter := range statment.Filters {
-		var predicate func(string) bool
-		switch op := filter.Op; op {
-		case "=":
-			{
-				predicate = func(val string) bool {
-					return val == filter.Val
-				}
+type Predicate func([]string) bool
 
-			}
+func (predicate Predicate) and(other Predicate) Predicate {
+	return func(row []string) bool {
+		return predicate(row) && other(row)
+	}
+}
 
-		case "!=":
-			{
-				predicate = func(val string) bool {
-					return val != filter.Val
-				}
-			}
+func (predicate Predicate) or(other Predicate) Predicate {
+	return func(row []string) bool {
+		return predicate(row) || other(row)
+	}
+}
 
-		case ">":
-			{
-				predicate = func(s string) bool {
-					return strings.Compare(filter.Val, s) > 0
-				}
-			}
-
-		case ">=":
-			{
-				predicate = func(s string) bool {
-					return strings.Compare(filter.Val, s) >= 0
-				}
-			}
-
-		case "<":
-			{
-				predicate = func(s string) bool {
-					return strings.Compare(filter.Val, s) < 0
-				}
-			}
-
-		case "<=":
-			{
-				predicate = func(s string) bool {
-					return strings.Compare(filter.Val, s) <= 0
-				}
+func (csvReader CSVReader) getPredicateFromFilter(filter Filter) (Predicate, error) {
+	var predicate Predicate
+	index, err := csvReader.getColumnIndex(filter.Field)
+	if err != nil {
+		log.Errorf(err.Error())
+	}
+	switch op := filter.Op; op {
+	case "=":
+		{
+			predicate = func(row []string) bool {
+				return row[index] == filter.Val
 			}
 
 		}
 
-		index, err := csvReader.getColumnIndex(filter.Field)
-		if err != nil {
-			log.Errorf(err.Error())
-			continue
+	case "!=":
+		{
+			predicate = func(row []string) bool {
+				return row[index] != filter.Val
+			}
 		}
-		columnFilterers = append(columnFilterers, ColumnFilter{
-			index,
-			predicate,
-		})
+
+	case ">":
+		{
+			predicate = func(row []string) bool {
+				return strings.Compare(filter.Val, row[index]) > 0
+			}
+		}
+
+	case ">=":
+		{
+			predicate = func(row []string) bool {
+				return strings.Compare(filter.Val, row[index]) >= 0
+			}
+		}
+
+	case "<":
+		{
+			predicate = func(row []string) bool {
+				return strings.Compare(filter.Val, row[index]) < 0
+			}
+		}
+
+	case "<=":
+		{
+			predicate = func(row []string) bool {
+				return strings.Compare(filter.Val, row[index]) <= 0
+			}
+		}
 
 	}
-	return columnFilterers
+
+	if filter.Other != nil {
+		otherFilter := filter.Other
+		if otherFilter.Filter == nil {
+			return nil, fmt.Errorf("Invalid statement. Missing other filter")
+		}
+		otherPredicate, err := csvReader.getPredicateFromFilter(*otherFilter.Filter)
+
+		if err != nil {
+			return nil, err
+		}
+
+		if otherFilter.LogicalOp == nil {
+			return nil, fmt.Errorf("Invalid statement. Missing logical Op for multiple filters")
+		}
+
+		switch *filter.Other.LogicalOp {
+		case AND:
+			{
+				predicate = predicate.and(otherPredicate)
+			}
+		case OR:
+			{
+				predicate = predicate.or(otherPredicate)
+			}
+		}
+	}
+
+	return predicate, nil
+}
+
+func (csvReader CSVReader) getFiltersFromStatement(statment SelectStatment) ([]Predicate, error) {
+	predicates := make([]Predicate, 0)
+	for _, filter := range statment.Filters {
+		if filter == nil {
+			continue
+		}
+		predicate, err := csvReader.getPredicateFromFilter(*filter)
+		if err != nil {
+			return nil, err
+		}
+		predicates = append(predicates, predicate)
+
+	}
+	return predicates, nil
 }
 
 func (csvReader CSVReader) getOrderingFromStatement(statement SelectStatment) []Ordering {
@@ -198,7 +246,10 @@ func getOrderingFunction(orderings []Ordering) *func(int, int, [][]string) bool 
 
 func (csvReader CSVReader) Execute(statement SelectStatment, sink Sink) error {
 	colIndicesToBeSelected := csvReader.getColsToBeSelected(statement)
-	filters := csvReader.getFiltersFromStatement(statement)
+	filters, err := csvReader.getFiltersFromStatement(statement)
+	if err != nil {
+		return err
+	}
 	orderings := csvReader.getOrderingFromStatement(statement)
 
 	filterer := NewFilterer(filters)

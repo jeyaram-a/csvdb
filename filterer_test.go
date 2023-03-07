@@ -1,22 +1,17 @@
 package main
 
 import (
-	"fmt"
 	"reflect"
 	"testing"
 )
 
 func TestFitlererWithFilters(t *testing.T) {
-	filters := []ColumnFilter{
-		{
-			0, func(s string) bool {
-				return s != "a1"
-			},
+	filters := []Predicate{
+		func(row []string) bool {
+			return row[0] != "a1"
 		},
-		{
-			1, func(s string) bool {
-				return s == "b1"
-			},
+		func(row []string) bool {
+			return row[1] == "b1"
 		},
 	}
 
@@ -40,7 +35,6 @@ func TestFitlererWithFilters(t *testing.T) {
 	go func() {
 		i := 0
 		for o := range outChan {
-			fmt.Println(o)
 			filtered[i] = o
 			i += 1
 		}
@@ -67,7 +61,7 @@ func TestFitlererWithFilters(t *testing.T) {
 }
 
 func TestFitlererWithoutFilters(t *testing.T) {
-	filters := []ColumnFilter{}
+	filters := []Predicate{}
 
 	filterer := Filterer{
 		filters,
@@ -89,7 +83,6 @@ func TestFitlererWithoutFilters(t *testing.T) {
 	go func() {
 		i := 0
 		for o := range outChan {
-			fmt.Println(o)
 			filtered[i] = o
 			i += 1
 		}
