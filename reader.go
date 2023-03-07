@@ -251,12 +251,17 @@ func (csvReader CSVReader) Execute(statement SelectStatment, sink Sink) error {
 		return err
 	}
 	orderings := csvReader.getOrderingFromStatement(statement)
+	columnSelector, err := NewColumnSelector(statement.Fields, csvReader.columnIndexMap)
+	if err != nil {
+		return err
+	}
 
 	filterer := NewFilterer(filters)
 	orderer := NewOrderer(getOrderingFunction(orderings))
 
 	go filterer.filter(orderer.inChan)
-	go orderer.order(sink.sinkChannel())
+	go orderer.order(columnSelector.inChan)
+	go columnSelector.selectColumn(sink.sinkChannel())
 
 	csvReader.read(colIndicesToBeSelected, filterer)
 
