@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -46,7 +45,7 @@ type CSVReader struct {
 func NewCSVReader(filepath string) (*CSVReader, error) {
 	lineProvider, err := NewBufferedDiskLineProvider(filepath)
 	if err != nil {
-		return nil, errors.New("error in opening file")
+		return nil, fmt.Errorf("error in opening file %s ", filepath)
 	}
 	colNameIndexMap, err := readColumns(lineProvider)
 

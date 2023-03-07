@@ -33,7 +33,7 @@ func NewSelectParser() (*participle.Parser[SelectStatment], error) {
 		{`Keyword`, `(?i)\b(SELECT)\b`},
 		{`Order`, `(ASC|DESC|asc|desc)`},
 		{`LogicalOp`, `(AND|OR)`},
-		{`Ident`, `[a-zA-Z_][a-zA-Z0-9_]*`},
+		{`Ident`, `[a-zA-Z_*][a-zA-Z0-9_]*`},
 		{`Number`, `[-+]?\d*\.?\d+([eE][-+]?\d+)?`},
 		{`String`, `'[^']*'|"[^"]*"`},
 		{`Operators`, `<>|!=|<=|>=|[-+*/%,.()=<>]`},
