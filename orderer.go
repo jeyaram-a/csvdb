@@ -1,7 +1,8 @@
 package main
 
 import (
-	log "github.com/sirupsen/logrus"
+	"sort"
+	"strings"
 )
 
 type Ordering struct {
@@ -9,59 +10,62 @@ type Ordering struct {
 	asc bool
 }
 
-type ResultContainer struct {
-	result [][]string
-	less   func(i, j int, results [][]string) bool
-}
-
-func (container ResultContainer) Len() int { return len(container.result) }
-
-func (container ResultContainer) Less(i, j int) bool {
-	// We want Pop to give us the highest, not lowest, priority so we use greater than here.
-	return container.less(i, j, container.result)
-}
-
-func (container ResultContainer) Swap(i, j int) {
-	container.result[i], container.result[j] = container.result[j], container.result[i]
-}
-
-func (container *ResultContainer) Push(x any) {
-	item := x.([]string)
-	container.result = append(container.result, item)
-}
-
-func (container *ResultContainer) Pop() any {
-	old := container.result
-	n := len(old)
-	item := old[n-1]
-	old[n-1] = nil // avoid memory leak
-	container.result = old[0 : n-1]
-	return item
-}
+type Less = func(int, int) bool
 
 type Orderer struct {
-	inChan    chan []string
-	container ResultContainer
+	inChan chan []string
+	rows   [][]string
+	less   Less
 }
 
-func NewOrderer(less *func(i, j int, results [][]string) bool) *Orderer {
-	return &Orderer{
-		inChan: make(chan []string),
-		container: ResultContainer{
-			result: make([][]string, 0),
-			less:   *less,
-		},
+type LessFunc = func(int, int) bool
+
+func (orderer *Orderer) setLessFuncFromOrderings(orderings []Ordering) {
+	defaultComparator := func(i, j int) bool {
+		return i < j
 	}
+	if len(orderings) == 0 {
+		orderer.less = defaultComparator
+		return
+	}
+
+	var customComparator = func(i, j int) bool {
+		row1 := orderer.rows[i]
+		row2 := orderer.rows[j]
+		for _, ordering := range orderings {
+			comp := strings.Compare(row1[ordering.col], row2[ordering.col])
+			if comp == 0 {
+				continue
+			}
+			if ordering.asc {
+				return comp < 0
+			} else {
+				return comp > 0
+			}
+		}
+		return false
+	}
+
+	orderer.less = customComparator
+}
+
+func NewOrderer(orderings []Ordering) *Orderer {
+	orderer := &Orderer{
+		inChan: make(chan []string),
+		rows:   make([][]string, 0),
+	}
+	orderer.setLessFuncFromOrderings(orderings)
+	return orderer
 }
 
 func (orderer *Orderer) order(outChan chan []string) {
 	for row := range orderer.inChan {
-		log.Debug("Orderer ", row)
-		orderer.container.Push(row)
+		orderer.rows = append(orderer.rows, row)
 	}
 
-	for len(orderer.container.result) > 0 {
-		outChan <- orderer.container.Pop().([]string)
+	sort.SliceStable(orderer.rows, orderer.less)
+	for _, row := range orderer.rows {
+		outChan <- row
 	}
 
 	close(outChan)
