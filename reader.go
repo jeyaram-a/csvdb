@@ -232,38 +232,6 @@ func (csvReader CSVReader) read(colIndicesToBeSelected map[int]bool, filterer *F
 	close(filterer.inChan)
 }
 
-type Comparator func(string, string) int
-
-func getOrderingFunction(orderings []Ordering) func(int, int, [][]string) bool {
-	defaultComparator := func(i, j int, results [][]string) bool {
-		return i < j
-	}
-	if len(orderings) == 0 {
-		return defaultComparator
-	}
-
-	var customComparator = func(i, j int, rows [][]string) bool {
-		row1 := rows[i]
-		row2 := rows[j]
-		for _, ordering := range orderings {
-			comp := strings.Compare(row1[ordering.col], row2[ordering.col])
-			if comp == 0 {
-				continue
-			}
-			if ordering.asc {
-				fmt.Println("In asc")
-				return comp < 0
-			} else {
-				fmt.Println("In desc")
-				return comp > 0
-			}
-		}
-		return false
-	}
-
-	return customComparator
-}
-
 func (csvReader CSVReader) Execute(statement SelectStatment, sink Sink) error {
 	colIndicesToBeSelected := csvReader.getColsToBeSelected(statement)
 	filters, err := csvReader.getFiltersFromStatement(statement)
@@ -278,10 +246,16 @@ func (csvReader CSVReader) Execute(statement SelectStatment, sink Sink) error {
 
 	filterer := NewFilterer(filters)
 	orderer := NewOrderer(orderings)
+	limit := 0
+	if statement.Limit != nil {
+		limit = *statement.Limit
+	}
+	limiter := NewLimiter(limit)
 
 	go filterer.filter(orderer.inChan)
 	go orderer.order(columnSelector.inChan)
-	go columnSelector.selectColumn(sink.sinkChannel())
+	go columnSelector.selectColumn(limiter.inChan)
+	go limiter.take(sink.sinkChannel())
 
 	csvReader.read(colIndicesToBeSelected, filterer)
 
