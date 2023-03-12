@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"csvdb/parser"
+	. "csvdb/processors"
 	"fmt"
 	"os"
 	"strings"
@@ -71,7 +73,7 @@ func readColumns(lineProvider LineProvider) (map[string]int, error) {
 	return colNameIndexMap, nil
 }
 
-func (csvReader CSVReader) getColsToBeSelected(statement SelectStatment) map[int]bool {
+func (csvReader CSVReader) getColsToBeSelected(statement parser.SelectStatment) map[int]bool {
 	indices := make(map[int]bool)
 	for _, selected_col := range statement.Fields {
 		index := csvReader.columnIndexMap[selected_col]
@@ -89,119 +91,7 @@ func (csvReader CSVReader) getColumnIndex(col string) (int, error) {
 	return index, nil
 }
 
-type Predicate func([]string) bool
-
-func (predicate Predicate) and(other Predicate) Predicate {
-	return func(row []string) bool {
-		return predicate(row) && other(row)
-	}
-}
-
-func (predicate Predicate) or(other Predicate) Predicate {
-	return func(row []string) bool {
-		return predicate(row) || other(row)
-	}
-}
-
-func (csvReader CSVReader) getPredicateFromFilter(filter Filter) (Predicate, error) {
-	var predicate Predicate
-	index, err := csvReader.getColumnIndex(filter.Field)
-	if err != nil {
-		log.Errorf(err.Error())
-	}
-	switch op := filter.Op; op {
-	case "=":
-		{
-			predicate = func(row []string) bool {
-				return row[index] == filter.Val
-			}
-
-		}
-
-	case "!=":
-		{
-			predicate = func(row []string) bool {
-				return row[index] != filter.Val
-			}
-		}
-
-	case ">":
-		{
-			predicate = func(row []string) bool {
-				return strings.Compare(filter.Val, row[index]) > 0
-			}
-		}
-
-	case ">=":
-		{
-			predicate = func(row []string) bool {
-				return strings.Compare(filter.Val, row[index]) >= 0
-			}
-		}
-
-	case "<":
-		{
-			predicate = func(row []string) bool {
-				return strings.Compare(filter.Val, row[index]) < 0
-			}
-		}
-
-	case "<=":
-		{
-			predicate = func(row []string) bool {
-				return strings.Compare(filter.Val, row[index]) <= 0
-			}
-		}
-
-	}
-
-	if filter.Other != nil {
-		otherFilter := filter.Other
-		if otherFilter.Filter == nil {
-			return nil, fmt.Errorf("Invalid statement. Missing other filter")
-		}
-		otherPredicate, err := csvReader.getPredicateFromFilter(*otherFilter.Filter)
-
-		if err != nil {
-			return nil, err
-		}
-
-		if otherFilter.LogicalOp == nil {
-			return nil, fmt.Errorf("Invalid statement. Missing logical Op for multiple filters")
-		}
-
-		switch *filter.Other.LogicalOp {
-		case AND:
-			{
-				predicate = predicate.and(otherPredicate)
-			}
-		case OR:
-			{
-				predicate = predicate.or(otherPredicate)
-			}
-		}
-	}
-
-	return predicate, nil
-}
-
-func (csvReader CSVReader) getFiltersFromStatement(statment SelectStatment) ([]Predicate, error) {
-	predicates := make([]Predicate, 0)
-	for _, filter := range statment.Filters {
-		if filter == nil {
-			continue
-		}
-		predicate, err := csvReader.getPredicateFromFilter(*filter)
-		if err != nil {
-			return nil, err
-		}
-		predicates = append(predicates, predicate)
-
-	}
-	return predicates, nil
-}
-
-func (csvReader CSVReader) getOrderingFromStatement(statement SelectStatment) []Ordering {
+func (csvReader CSVReader) getOrderingFromStatement(statement parser.SelectStatment) []Ordering {
 	orderings := make([]Ordering, 0)
 
 	for _, order := range statement.Order {
@@ -211,15 +101,15 @@ func (csvReader CSVReader) getOrderingFromStatement(statement SelectStatment) []
 			continue
 		}
 		order := Ordering{
-			col: colIndex,
-			asc: order.Order == nil || *order.Order == "asc" || *order.Order == "desc",
+			Col: colIndex,
+			Asc: order.Order == nil || *order.Order == "asc" || *order.Order == "desc",
 		}
 		orderings = append(orderings, order)
 	}
 	return orderings
 }
 
-func (csvReader CSVReader) read(colIndicesToBeSelected map[int]bool, filterer *Filterer) {
+func (csvReader CSVReader) read(colIndicesToBeSelected map[int]bool, node ProcessingNode) {
 	for {
 		row := csvReader.lineProvider.readLine()
 		if row == "" {
@@ -227,14 +117,59 @@ func (csvReader CSVReader) read(colIndicesToBeSelected map[int]bool, filterer *F
 		}
 		log.Debug("reading ", row)
 		splittedRows := strings.Split(row, ",")
-		filterer.inChan <- splittedRows
+		node.Channel() <- splittedRows
 	}
-	close(filterer.inChan)
+	close(node.Channel())
 }
 
-func (csvReader CSVReader) Execute(statement SelectStatment, sink Sink) error {
-	colIndicesToBeSelected := csvReader.getColsToBeSelected(statement)
-	filters, err := csvReader.getFiltersFromStatement(statement)
+type InputProvider struct {
+	lineProvider LineProvider
+	outC         chan []string
+}
+
+func (inputProvider *InputProvider) Prev() ProcessingNode {
+	return nil
+}
+
+func (inputProvider *InputProvider) Channel() chan []string {
+	return inputProvider.outC
+}
+
+func (inputProvider *InputProvider) SetPrev(node ProcessingNode) {
+}
+
+func (inputProvider *InputProvider) Process() {
+	for {
+		row := inputProvider.lineProvider.readLine()
+		if row == "" {
+			break
+		}
+		log.Debug("reading ", row)
+		splittedRows := strings.Split(row, ",")
+		inputProvider.Channel() <- splittedRows
+	}
+	close(inputProvider.Channel())
+}
+
+func buildProcessingChain(sink Sink, nodes ...ProcessingNode) ProcessingNode {
+
+	if len(nodes) == 0 {
+		return nil
+	}
+
+	for i := 1; i < len(nodes); i += 1 {
+		nodes[i].SetPrev(nodes[i-1])
+		go nodes[i].Process()
+	}
+
+	go sink.ConsumeFrom(nodes[len(nodes)-1])
+	// Returning head
+	return nodes[0]
+}
+
+func (csvReader CSVReader) Execute(statement parser.SelectStatment, sink Sink) error {
+	// colIndicesToBeSelected := csvReader.getColsToBeSelected(statement)
+	filters, err := GetFiltersFromStatement(statement, csvReader.columnIndexMap)
 	if err != nil {
 		return err
 	}
@@ -243,7 +178,10 @@ func (csvReader CSVReader) Execute(statement SelectStatment, sink Sink) error {
 	if err != nil {
 		return err
 	}
-
+	inputProvider := &InputProvider{
+		csvReader.lineProvider,
+		make(chan []string),
+	}
 	filterer := NewFilterer(filters)
 	orderer := NewOrderer(orderings)
 	limit := 0
@@ -252,12 +190,12 @@ func (csvReader CSVReader) Execute(statement SelectStatment, sink Sink) error {
 	}
 	limiter := NewLimiter(limit)
 
-	go filterer.filter(orderer.inChan)
-	go orderer.order(columnSelector.inChan)
-	go columnSelector.selectColumn(limiter.inChan)
-	go limiter.take(sink.sinkChannel())
+	headNode := buildProcessingChain(sink, inputProvider, filterer, orderer, columnSelector, limiter)
 
-	csvReader.read(colIndicesToBeSelected, filterer)
-
+	if headNode == nil {
+		fmt.Errorf("error in creating processing chain. Pass atleast one processing node")
+	}
+	headNode.Process()
+	<-sink.Done()
 	return nil
 }
