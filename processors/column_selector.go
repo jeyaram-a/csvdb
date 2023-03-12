@@ -1,18 +1,24 @@
-package main
+package processors
 
-import "fmt"
+import (
+	"fmt"
+
+	log "github.com/sirupsen/logrus"
+)
 
 type ColumnSelector struct {
-	all    bool
-	cols   []int
-	inChan chan []string
+	prevNode ProcessingNode
+	all      bool
+	cols     []int
+	inChan   chan []string
 }
 
-func (colSelector *ColumnSelector) selectColumn(outChan chan []string) {
-
-	for row := range colSelector.inChan {
+func (colSelector *ColumnSelector) Process() {
+	defer close(colSelector.Channel())
+	for row := range colSelector.Prev().Channel() {
+		log.Debug("ColSelector ", row)
 		if colSelector.all {
-			outChan <- row
+			colSelector.Channel() <- row
 		} else {
 			newRow := make([]string, len(colSelector.cols))
 			i := 0
@@ -20,11 +26,22 @@ func (colSelector *ColumnSelector) selectColumn(outChan chan []string) {
 				newRow[i] = row[index]
 				i += 1
 			}
-			outChan <- newRow
+			colSelector.Channel() <- newRow
 		}
 	}
 
-	close(outChan)
+}
+
+func (colSelector *ColumnSelector) Prev() ProcessingNode {
+	return colSelector.prevNode
+}
+
+func (colSelector *ColumnSelector) Channel() chan []string {
+	return colSelector.inChan
+}
+
+func (colSelector *ColumnSelector) SetPrev(node ProcessingNode) {
+	colSelector.prevNode = node
 }
 
 func NewColumnSelector(cols []string, colIndexMap map[string]int) (*ColumnSelector, error) {
@@ -42,6 +59,7 @@ func NewColumnSelector(cols []string, colIndexMap map[string]int) (*ColumnSelect
 		colsToBeSelected = append(colsToBeSelected, index)
 	}
 	return &ColumnSelector{
+		nil,
 		all,
 		colsToBeSelected,
 		make(chan []string),

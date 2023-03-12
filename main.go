@@ -1,6 +1,8 @@
 package main
 
 import (
+	"csvdb/parser"
+	"csvdb/processors"
 	"os"
 
 	"github.com/alecthomas/kong"
@@ -28,7 +30,7 @@ func main() {
 
 	switch ctx.Command() {
 	case "<path> <query>":
-		parser, _ := NewSelectParser()
+		parser, _ := parser.NewSelectParser()
 		ast, err := parser.ParseString("", CLI.Query)
 		if err != nil {
 			log.Error("error in parsing select statement ", err.Error())
@@ -39,9 +41,8 @@ func main() {
 			log.Error(err.Error())
 			os.Exit(1)
 		}
-		cSink := NewConsoleSink()
+		cSink := processors.NewConsoleSink()
 		reader.Execute(*ast, cSink)
-		cSink.print()
 	}
 
 }
