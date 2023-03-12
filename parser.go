@@ -26,6 +26,7 @@ type SelectStatment struct {
 	Fields  []string       `"select" @Ident ("," @Ident)*`
 	Filters []*Filter      `("where" @@ ("," @@)*)?`
 	Order   []*ParsedOrder `("order" "by" @@("," @@)*)?`
+	Limit   *int           `("limit" @Number)?`
 }
 
 func NewSelectParser() (*participle.Parser[SelectStatment], error) {
