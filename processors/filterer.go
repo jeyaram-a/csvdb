@@ -29,18 +29,18 @@ func (predicate Predicate) or(other Predicate) Predicate {
 type Filterer struct {
 	prevNode   ProcessingNode
 	predicates []Predicate
-	inC        chan []string
+	channel        chan []string
 }
 
 func NewFilterer(predicates []Predicate) *Filterer {
 	return &Filterer{
 		predicates: predicates,
-		inC:        make(chan []string),
+		channel:        make(chan []string),
 	}
 }
 
 func (filterer *Filterer) Channel() chan []string {
-	return filterer.inC
+	return filterer.channel
 }
 
 func (filterer *Filterer) Prev() ProcessingNode {

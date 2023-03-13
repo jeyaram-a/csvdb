@@ -4,15 +4,14 @@ type Limiter struct {
 	prevNode ProcessingNode
 	active   bool
 	limit    int
-	// TODO remove name
-	inChan chan []string
+	channel  chan []string
 }
 
 func NewLimiter(limit int) *Limiter {
 	return &Limiter{
-		active: limit > 0,
-		limit:  limit,
-		inChan: make(chan []string),
+		active:  limit > 0,
+		limit:   limit,
+		channel: make(chan []string),
 	}
 }
 
@@ -21,7 +20,7 @@ func (limiter *Limiter) Prev() ProcessingNode {
 }
 
 func (limiter *Limiter) Channel() chan []string {
-	return limiter.inChan
+	return limiter.channel
 }
 
 func (limiter *Limiter) SetPrev(node ProcessingNode) {

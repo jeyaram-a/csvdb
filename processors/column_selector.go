@@ -10,7 +10,7 @@ type ColumnSelector struct {
 	prevNode ProcessingNode
 	all      bool
 	cols     []int
-	inChan   chan []string
+	channel   chan []string
 }
 
 func (colSelector *ColumnSelector) Process() {
@@ -37,7 +37,7 @@ func (colSelector *ColumnSelector) Prev() ProcessingNode {
 }
 
 func (colSelector *ColumnSelector) Channel() chan []string {
-	return colSelector.inChan
+	return colSelector.channel
 }
 
 func (colSelector *ColumnSelector) SetPrev(node ProcessingNode) {
