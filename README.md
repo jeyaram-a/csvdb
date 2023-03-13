@@ -18,11 +18,12 @@ csvdb "/home/j/development/csvdb/test.csv" "select * where a=a1, b!=b2"
     * ASC / DESC. 
     * assumes asc if not explicity mentioned
     * multiple order bys. (order by a, b)
+* limit
+    * limit (int val). limit 10
 
 
 ## Not yet supported. But will be soon
 * Grouping by + Aggregate Operations
-* Limit
 * Pattern matching where clauses (LIKE)
 * Type casting 
 

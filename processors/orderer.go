@@ -14,7 +14,7 @@ type Less = func(int, int) bool
 
 type Orderer struct {
 	prevNode ProcessingNode
-	inChan   chan []string
+	channel   chan []string
 	rows     [][]string
 	less     Less
 }
@@ -52,7 +52,7 @@ func (orderer *Orderer) setLessFuncFromOrderings(orderings []Ordering) {
 
 func NewOrderer(orderings []Ordering) *Orderer {
 	orderer := &Orderer{
-		inChan: make(chan []string),
+		channel: make(chan []string),
 		rows:   make([][]string, 0),
 	}
 	orderer.setLessFuncFromOrderings(orderings)
@@ -64,7 +64,7 @@ func (orderer *Orderer) Prev() ProcessingNode {
 }
 
 func (orderer *Orderer) Channel() chan []string {
-	return orderer.inChan
+	return orderer.channel
 }
 
 func (orderer *Orderer) SetPrev(node ProcessingNode) {
